@@ -1,0 +1,18 @@
+[Unit]
+Description=Mybeme Browser Gateway Service (FastAPI & WebSocket)
+After=network.target tailscaled.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Project/mybeme-browser/gateway
+Environment="PYTHONPATH=/root/Project/mybeme-browser/gateway"
+Environment="MYBEME_BROWSER_HOST=0.0.0.0"
+Environment="MYBEME_BROWSER_PORT=8765"
+Environment="MYBEME_BROWSER_TOKEN=mybeme-browser-key-991823"
+ExecStart=/root/.hermes/tools/python-3.14.7+20240901-linux-x64/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8765
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
