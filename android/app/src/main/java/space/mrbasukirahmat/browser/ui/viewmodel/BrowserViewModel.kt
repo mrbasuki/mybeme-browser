@@ -31,7 +31,11 @@ data class BrowserUiState(
     ),
     val syncStatus: SyncStatus = SyncStatus.DISCONNECTED,
     val isCoPilotSheetOpen: Boolean = false,
-    val isTabGridOpen: Boolean = false
+    val isTabGridOpen: Boolean = false,
+    val isShieldDialogOpen: Boolean = false,
+    val isMenuSheetOpen: Boolean = false,
+    val isDesktopMode: Boolean = false,
+    val isShieldEnabled: Boolean = true
 )
 
 class BrowserViewModel(
@@ -40,6 +44,27 @@ class BrowserViewModel(
 
     private val _uiState = MutableStateFlow(BrowserUiState())
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
+
+    fun openShieldDialog(open: Boolean) {
+        _uiState.value = _uiState.value.copy(isShieldDialogOpen = open)
+    }
+
+    fun openMenuSheet(open: Boolean) {
+        _uiState.value = _uiState.value.copy(isMenuSheetOpen = open)
+    }
+
+    fun toggleShieldEnabled(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(isShieldEnabled = enabled)
+    }
+
+    fun toggleDesktopMode() {
+        _uiState.value = _uiState.value.copy(isDesktopMode = !_uiState.value.isDesktopMode)
+    }
+
+    fun clearStats() {
+        shield.resetStats()
+        _uiState.value = _uiState.value.copy(blockedCount = 0)
+    }
 
     fun updateUrl(url: String) {
         val secured = shield.upgradeUrlToHttps(url)

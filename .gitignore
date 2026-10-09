@@ -1,0 +1,9 @@
+*.apk
+mybeme-browser-debug/
+mybeme-browser-release/
+.gradle/
+build/
+app/build/
+*.hprof
+.idea/
+*.iml
