@@ -19,8 +19,10 @@ import space.mrbasukirahmat.browser.ui.theme.*
 @Composable
 fun BrowserMenuSheet(
     isDesktopMode: Boolean,
+    canGoForward: Boolean,
     onNewTab: () -> Unit,
     onReload: () -> Unit,
+    onForward: () -> Unit,
     onToggleDesktopMode: () -> Unit,
     onShare: () -> Unit,
     onBookmark: () -> Unit,
@@ -66,6 +68,17 @@ fun BrowserMenuSheet(
                 }
             )
 
+            if (canGoForward) {
+                MenuItemRow(
+                    icon = Icons.Default.ArrowForward,
+                    label = "Maju (Forward)",
+                    onClick = {
+                        onForward()
+                        onDismiss()
+                    }
+                )
+            }
+
             MenuItemRow(
                 icon = Icons.Default.Computer,
                 label = if (isDesktopMode) "Tampilan Mobile" else "Minta Situs Desktop",
@@ -97,7 +110,7 @@ fun BrowserMenuSheet(
             MenuItemRow(
                 icon = Icons.Default.Hub,
                 label = "Jalur Tailscale Mybeme (100.80.80.80)",
-                badge = "TERHUBUNG",
+                badge = "ONLINE",
                 onClick = {
                     onDismiss()
                 }

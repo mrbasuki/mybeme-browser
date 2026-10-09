@@ -1,10 +1,16 @@
 package space.mrbasukirahmat.browser.ui
 
 import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Environment
 import android.view.ViewGroup
+import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -162,6 +168,27 @@ fun BrowserScreen(
                             setSupportZoom(true)
                             builtInZoomControls = true
                             displayZoomControls = false
+                            mediaPlaybackRequiresUserGesture = false
+                        }
+
+                        // Robust file download listener
+                        setDownloadListener { downloadUrl, userAgent, contentDisposition, mimetype, _ ->
+                            try {
+                                val filename = URLUtil.guessFileName(downloadUrl, contentDisposition, mimetype)
+                                val request = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
+                                    setMimeType(mimetype)
+                                    addRequestHeader("User-Agent", userAgent)
+                                    setDescription("Mengunduh berkas...")
+                                    setTitle(filename)
+                                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+                                }
+                                val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                dm.enqueue(request)
+                                Toast.makeText(ctx, "Mengunduh: $filename", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(ctx, "Gagal mengunduh: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         }
 
                         webViewClient = MybemeWebViewClient(
@@ -237,6 +264,7 @@ fun BrowserScreen(
                         webViewRef?.clearCache(true)
                         webViewRef?.clearFormData()
                         viewModel.clearStats()
+                        Toast.makeText(context, "Cache situs berhasil dibersihkan", Toast.LENGTH_SHORT).show()
                     },
                     onDismiss = {
                         viewModel.openShieldDialog(false)
@@ -248,12 +276,16 @@ fun BrowserScreen(
             if (uiState.isMenuSheetOpen) {
                 BrowserMenuSheet(
                     isDesktopMode = uiState.isDesktopMode,
+                    canGoForward = webViewRef?.canGoForward() == true,
                     onNewTab = {
                         viewModel.addNewTab()
                         webViewRef?.loadUrl("https://duckduckgo.com")
                     },
                     onReload = {
                         webViewRef?.reload()
+                    },
+                    onForward = {
+                        webViewRef?.goForward()
                     },
                     onToggleDesktopMode = {
                         viewModel.toggleDesktopMode()
@@ -268,7 +300,7 @@ fun BrowserScreen(
                         context.startActivity(shareIntent)
                     },
                     onBookmark = {
-                        summaryText = "⭐ Halaman '${uiState.currentTitle}' disimpan ke bookmark lokal!"
+                        summaryText = "⭐ Halaman '${uiState.currentTitle}' berhasil disimpan ke bookmark lokal!"
                         viewModel.openCoPilotSheet(true)
                     },
                     onDismiss = {
@@ -277,7 +309,7 @@ fun BrowserScreen(
                 )
             }
 
-            // Mybeme Co-Pilot Bottom Sheet
+            // Mybeme Co-Pilot Bottom Sheet (Real Two-Way Handoff & Summarizer)
             if (uiState.isCoPilotSheetOpen) {
                 MybemeCoPilotSheet(
                     url = uiState.currentUrl,
@@ -285,20 +317,31 @@ fun BrowserScreen(
                     summaryResult = summaryText,
                     onSummarizeClick = {
                         webViewRef?.let { wv ->
+                            summaryText = "⏳ Mengirim isi halaman ke Mybeme di VPS untuk dianalisis..."
                             ReadabilityExtractor.extractCleanText(wv) { text ->
-                                summaryText = "Menganalisis artikel...\n\nPoin Penting:\n• " +
-                                    (if (text.length > 200) text.take(200) + "..." else text)
+                                viewModel.summarizePage(text) { result ->
+                                    summaryText = result
+                                }
                             }
                         }
                     },
                     onHandoffClick = {
-                        summaryText = "✓ Tab berhasil dioper ke workspace riset Mybeme di VPS!"
+                        webViewRef?.let { wv ->
+                            summaryText = "⏳ Mengoper tab ke antrean riset Mybeme..."
+                            ReadabilityExtractor.extractCleanText(wv) { text ->
+                                viewModel.handoffToVps(text) { result ->
+                                    summaryText = result
+                                }
+                            }
+                        }
                     },
                     onSecurityCheckClick = {
                         val isHttps = uiState.currentUrl.startsWith("https://")
-                        summaryText = "Audit Keamanan:\n• Protokol: " + (if (isHttps) "HTTPS Terenkripsi" else "HTTP Terbuka") +
-                            "\n• Pelacak diblokir: " + uiState.blockedCount + " trackers dicegat" +
-                            "\n• Status: Aman untuk browsing"
+                        summaryText = "🛡️ Audit Keamanan Halaman:\n\n" +
+                            "• Protokol: " + (if (isHttps) "HTTPS Terenkripsi TLS" else "HTTP Terbuka (Tidak Aman)") + "\n" +
+                            "• Pelacak Tercegat: " + uiState.blockedCount + " tracker/iklan\n" +
+                            "• Domain: " + try { java.net.URI(uiState.currentUrl).host } catch (_: Exception) { "N/A" } + "\n" +
+                            "• Status Shield: " + (if (uiState.isShieldEnabled) "Aktif Melindungi" else "Dimatikan")
                     },
                     onDismiss = {
                         viewModel.openCoPilotSheet(false)

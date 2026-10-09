@@ -2,7 +2,10 @@ package space.mrbasukirahmat.browser.sync
 
 import kotlinx.coroutines.*
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class TailscaleSyncManager(
@@ -14,12 +17,16 @@ class TailscaleSyncManager(
     private val onStatusChanged: (Boolean) -> Unit
 ) {
     private val client = OkHttpClient.Builder()
-        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
         .pingInterval(20, TimeUnit.SECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
-    private var isConnected = false
+    var isConnected = false
+        private set
+
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun connect() {
@@ -79,7 +86,7 @@ class TailscaleSyncManager(
         }
     }
 
-    fun sendHandoff(url: String, title: String, cleanText: String, action: String = "open") {
+    fun sendHandoffWebSocket(url: String, title: String, cleanText: String, action: String = "open") {
         if (!isConnected || webSocket == null) return
         val payload = JSONObject().apply {
             put("url", url)
@@ -94,6 +101,59 @@ class TailscaleSyncManager(
             put("payload", payload)
         }
         webSocket?.send(message.toString())
+    }
+
+    suspend fun sendHandoffHttp(url: String, title: String, note: String): Boolean = withContext(Dispatchers.IO) {
+        val json = JSONObject().apply {
+            put("url", url)
+            put("title", title)
+            put("note", note)
+            put("action_requested", "open")
+        }
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val body = json.toString().toRequestBody(mediaType)
+        val request = Request.Builder()
+            .url("http://$host:$port/api/v1/handoff")
+            .header("Authorization", "Bearer $token")
+            .post(body)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun fetchSummaryHttp(url: String, title: String, cleanText: String): String? = withContext(Dispatchers.IO) {
+        val json = JSONObject().apply {
+            put("url", url)
+            put("title", title)
+            put("cleaned_text", cleanText)
+        }
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val body = json.toString().toRequestBody(mediaType)
+        val request = Request.Builder()
+            .url("http://$host:$port/api/v1/summarize")
+            .header("Authorization", "Bearer $token")
+            .post(body)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val respBody = response.body?.string() ?: return@withContext null
+                    val respJson = JSONObject(respBody)
+                    respJson.optString("summary")
+                } else {
+                    null
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun disconnect() {

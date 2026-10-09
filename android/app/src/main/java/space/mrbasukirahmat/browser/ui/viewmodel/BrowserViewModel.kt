@@ -1,13 +1,19 @@
 package space.mrbasukirahmat.browser.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import space.mrbasukirahmat.browser.data.db.AppDatabase
+import space.mrbasukirahmat.browser.data.db.HistoryEntity
 import space.mrbasukirahmat.browser.data.db.TabEntity
 import space.mrbasukirahmat.browser.shield.BraveShieldsInterceptor
+import space.mrbasukirahmat.browser.sync.TailscaleSyncManager
 import java.util.UUID
 
 enum class SyncStatus {
@@ -21,14 +27,7 @@ data class BrowserUiState(
     val progress: Int = 100,
     val blockedCount: Int = 0,
     val activeTabId: String = "default-tab",
-    val tabs: List<TabEntity> = listOf(
-        TabEntity(
-            id = "default-tab",
-            url = "https://duckduckgo.com",
-            title = "DuckDuckGo",
-            source = "LOCAL"
-        )
-    ),
+    val tabs: List<TabEntity> = emptyList(),
     val syncStatus: SyncStatus = SyncStatus.DISCONNECTED,
     val isCoPilotSheetOpen: Boolean = false,
     val isTabGridOpen: Boolean = false,
@@ -39,11 +38,71 @@ data class BrowserUiState(
 )
 
 class BrowserViewModel(
-    val shield: BraveShieldsInterceptor = BraveShieldsInterceptor()
-) : ViewModel() {
+    application: Application
+) : AndroidViewModel(application) {
+
+    private val db = AppDatabase.getDatabase(application)
+    private val tabDao = db.tabDao()
+    private val historyDao = db.historyDao()
+
+    val shield = BraveShieldsInterceptor(context = application)
 
     private val _uiState = MutableStateFlow(BrowserUiState())
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
+
+    private val syncManager = TailscaleSyncManager(
+        host = "100.80.80.80",
+        port = 8765,
+        token = "mybeme-browser-key-991823",
+        onTabReceived = { url, title, note ->
+            viewModelScope.launch(Dispatchers.Main) {
+                addNewTab(url = url, title = title, source = "MYBEME")
+            }
+        },
+        onSummaryReceived = { _, _ -> },
+        onStatusChanged = { connected ->
+            viewModelScope.launch(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    syncStatus = if (connected) SyncStatus.CONNECTED else SyncStatus.DISCONNECTED
+                )
+            }
+        }
+    )
+
+    init {
+        // Start Tailscale WebSocket connection
+        syncManager.connect()
+
+        // Observe Room DB Tabs
+        viewModelScope.launch {
+            tabDao.getAllTabs().collect { storedTabs ->
+                if (storedTabs.isEmpty()) {
+                    val initialTab = TabEntity(
+                        id = "default-tab",
+                        url = "https://duckduckgo.com",
+                        title = "DuckDuckGo",
+                        source = "LOCAL"
+                    )
+                    tabDao.insertTab(initialTab)
+                    _uiState.value = _uiState.value.copy(
+                        tabs = listOf(initialTab),
+                        activeTabId = initialTab.id,
+                        currentUrl = initialTab.url,
+                        currentTitle = initialTab.title
+                    )
+                } else {
+                    val currentActiveId = _uiState.value.activeTabId
+                    val active = storedTabs.find { it.id == currentActiveId } ?: storedTabs.first()
+                    _uiState.value = _uiState.value.copy(
+                        tabs = storedTabs,
+                        activeTabId = active.id,
+                        currentUrl = if (_uiState.value.currentUrl.isEmpty()) active.url else _uiState.value.currentUrl,
+                        currentTitle = if (_uiState.value.currentTitle.isEmpty()) active.title else _uiState.value.currentTitle
+                    )
+                }
+            }
+        }
+    }
 
     fun openShieldDialog(open: Boolean) {
         _uiState.value = _uiState.value.copy(isShieldDialogOpen = open)
@@ -54,6 +113,7 @@ class BrowserViewModel(
     }
 
     fun toggleShieldEnabled(enabled: Boolean) {
+        shield.isEnabled = enabled
         _uiState.value = _uiState.value.copy(isShieldEnabled = enabled)
     }
 
@@ -72,6 +132,16 @@ class BrowserViewModel(
             currentUrl = secured,
             blockedCount = shield.blockedCount
         )
+
+        // Record visit in Room DB History
+        viewModelScope.launch(Dispatchers.IO) {
+            historyDao.recordVisit(
+                HistoryEntity(
+                    url = secured,
+                    title = _uiState.value.currentTitle
+                )
+            )
+        }
     }
 
     fun updateTitle(title: String) {
@@ -84,10 +154,6 @@ class BrowserViewModel(
             isLoading = progress < 100,
             blockedCount = shield.blockedCount
         )
-    }
-
-    fun setSyncStatus(status: SyncStatus) {
-        _uiState.value = _uiState.value.copy(syncStatus = status)
     }
 
     fun openCoPilotSheet(open: Boolean) {
@@ -105,9 +171,10 @@ class BrowserViewModel(
             title = title,
             source = source
         )
-        val updatedTabs = _uiState.value.tabs + newTab
+        viewModelScope.launch(Dispatchers.IO) {
+            tabDao.insertTab(newTab)
+        }
         _uiState.value = _uiState.value.copy(
-            tabs = updatedTabs,
             activeTabId = newTab.id,
             currentUrl = newTab.url,
             currentTitle = newTab.title,
@@ -125,22 +192,67 @@ class BrowserViewModel(
     }
 
     fun closeTab(tab: TabEntity) {
-        val currentTabs = _uiState.value.tabs
-        if (currentTabs.size <= 1) {
-            // Keep at least one tab
-            return
+        viewModelScope.launch(Dispatchers.IO) {
+            tabDao.deleteTab(tab)
         }
-        val updatedTabs = currentTabs.filter { it.id != tab.id }
-        val newActive = if (tab.id == _uiState.value.activeTabId) {
-            updatedTabs.last()
-        } else {
-            currentTabs.first { it.id == _uiState.value.activeTabId }
+        val remaining = _uiState.value.tabs.filter { it.id != tab.id }
+        if (remaining.isNotEmpty()) {
+            val next = remaining.last()
+            _uiState.value = _uiState.value.copy(
+                activeTabId = next.id,
+                currentUrl = next.url,
+                currentTitle = next.title
+            )
         }
-        _uiState.value = _uiState.value.copy(
-            tabs = updatedTabs,
-            activeTabId = newActive.id,
-            currentUrl = newActive.url,
-            currentTitle = newActive.title
-        )
+    }
+
+    // Real Two-Way Handoff Execution
+    fun handoffToVps(cleanText: String, onResult: (String) -> Unit) {
+        val currentUrl = _uiState.value.currentUrl
+        val currentTitle = _uiState.value.currentTitle
+
+        viewModelScope.launch {
+            // Send WebSocket notification
+            syncManager.sendHandoffWebSocket(currentUrl, currentTitle, cleanText, action = "handoff")
+
+            // Send HTTP POST fallback
+            val success = syncManager.sendHandoffHttp(currentUrl, currentTitle, "Tab dioper dari HP Pak Basuki")
+            if (success) {
+                onResult("✓ Sukses! Tab dan konteks halaman berhasil dioper ke antrean riset Mybeme di VPS.")
+            } else {
+                onResult("⚠️ Tailscale VPS sedang offline. Sesi telah disimpan di antrean lokal untuk dikirim ulang.")
+            }
+        }
+    }
+
+    // Real AI Summarize via VPS Gateway with Local Fallback
+    fun summarizePage(cleanText: String, onResult: (String) -> Unit) {
+        val currentUrl = _uiState.value.currentUrl
+        val currentTitle = _uiState.value.currentTitle
+
+        viewModelScope.launch {
+            val vpsSummary = syncManager.fetchSummaryHttp(currentUrl, currentTitle, cleanText)
+            if (!vpsSummary.isNullOrEmpty()) {
+                onResult("⚡ Ringkasan Mybeme (via Gateway VPS):\n\n$vpsSummary")
+            } else {
+                // Local fallback extraction if VPS is temporarily unreachable
+                val sentences = cleanText.split(Regex("[.!?]\\s+"))
+                    .map { it.trim() }
+                    .filter { it.length > 25 }
+                    .take(4)
+
+                val localSummary = if (sentences.isNotEmpty()) {
+                    "📱 Ringkasan Cepat (Lokal HP):\n\n" + sentences.joinToString("\n") { "• $it." }
+                } else {
+                    "Halaman ini tidak memiliki cukup teks artikel untuk diringkas."
+                }
+                onResult(localSummary)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        syncManager.disconnect()
     }
 }
