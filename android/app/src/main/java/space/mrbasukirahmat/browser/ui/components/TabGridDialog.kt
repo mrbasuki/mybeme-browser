@@ -45,6 +45,7 @@ fun TabGridDialog(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .systemBarsPadding()
                     .padding(16.dp)
             ) {
                 // Header
