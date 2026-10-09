@@ -19,11 +19,13 @@ import space.mrbasukirahmat.browser.ui.theme.*
 @Composable
 fun BrowserMenuSheet(
     isDesktopMode: Boolean,
+    isToolbarAtTop: Boolean,
     canGoForward: Boolean,
     onNewTab: () -> Unit,
     onReload: () -> Unit,
     onForward: () -> Unit,
     onToggleDesktopMode: () -> Unit,
+    onToggleToolbarPosition: () -> Unit,
     onShare: () -> Unit,
     onBookmark: () -> Unit,
     onDismiss: () -> Unit
@@ -78,6 +80,16 @@ fun BrowserMenuSheet(
                     }
                 )
             }
+
+            MenuItemRow(
+                icon = Icons.Default.VerticalAlignTop,
+                label = if (isToolbarAtTop) "Pindah Navbar ke Bawah" else "Pindah Navbar ke Atas (Brave Default)",
+                badge = if (isToolbarAtTop) "ATAS" else "BAWAH",
+                onClick = {
+                    onToggleToolbarPosition()
+                    onDismiss()
+                }
+            )
 
             MenuItemRow(
                 icon = Icons.Default.Computer,

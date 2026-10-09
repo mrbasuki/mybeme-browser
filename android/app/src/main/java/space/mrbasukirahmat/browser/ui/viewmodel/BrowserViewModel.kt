@@ -34,7 +34,8 @@ data class BrowserUiState(
     val isShieldDialogOpen: Boolean = false,
     val isMenuSheetOpen: Boolean = false,
     val isDesktopMode: Boolean = false,
-    val isShieldEnabled: Boolean = true
+    val isShieldEnabled: Boolean = true,
+    val isToolbarAtTop: Boolean = true
 )
 
 class BrowserViewModel(
@@ -49,6 +50,10 @@ class BrowserViewModel(
 
     private val _uiState = MutableStateFlow(BrowserUiState())
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
+
+    fun toggleToolbarPosition() {
+        _uiState.value = _uiState.value.copy(isToolbarAtTop = !_uiState.value.isToolbarAtTop)
+    }
 
     private val syncManager = TailscaleSyncManager(
         host = "100.80.80.80",

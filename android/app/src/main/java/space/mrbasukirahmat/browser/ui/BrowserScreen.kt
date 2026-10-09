@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import space.mrbasukirahmat.browser.ui.components.BottomNavigationBar
+import space.mrbasukirahmat.browser.ui.components.BrowserToolbar
 import space.mrbasukirahmat.browser.ui.components.BrowserMenuSheet
 import space.mrbasukirahmat.browser.ui.components.ShieldDialog
 import space.mrbasukirahmat.browser.ui.components.TabGridDialog
@@ -57,59 +58,74 @@ fun BrowserScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = ObsidianBlack,
         topBar = {
-            // Dynamic Header with Tailscale Mesh Status
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(ObsidianSurface)
                     .statusBarsPadding()
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Tailscale LED indicator
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    when (uiState.syncStatus) {
-                                        SyncStatus.CONNECTED -> ShieldGreen
-                                        SyncStatus.RECONNECTING -> DesertGold
-                                        SyncStatus.DISCONNECTED -> TextMuted
-                                    }
-                                )
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
+                if (uiState.isToolbarAtTop) {
+                    BrowserToolbar(
+                        currentUrl = uiState.currentUrl,
+                        blockedCount = uiState.blockedCount,
+                        tabCount = uiState.tabs.size,
+                        isAtTop = true,
+                        onNavigate = { newUrl ->
+                            viewModel.updateUrl(newUrl)
+                            webViewRef?.loadUrl(newUrl)
+                        },
+                        onShieldClick = { viewModel.openShieldDialog(true) },
+                        onMybemeClick = { viewModel.openCoPilotSheet(true) },
+                        onTabClick = { viewModel.openTabGrid(true) },
+                        onMenuClick = { viewModel.openMenuSheet(true) }
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when (uiState.syncStatus) {
+                                            SyncStatus.CONNECTED -> ShieldGreen
+                                            SyncStatus.RECONNECTING -> DesertGold
+                                            SyncStatus.DISCONNECTED -> TextMuted
+                                        }
+                                    )
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = when (uiState.syncStatus) {
+                                    SyncStatus.CONNECTED -> "Mybeme VPS (100.80.80.80)"
+                                    SyncStatus.RECONNECTING -> "Menyambung Tailscale..."
+                                    SyncStatus.DISCONNECTED -> "Tailscale Offline"
+                                },
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
                         Text(
-                            text = when (uiState.syncStatus) {
-                                SyncStatus.CONNECTED -> "Mybeme VPS (100.80.80.80)"
-                                SyncStatus.RECONNECTING -> "Menyambung Tailscale..."
-                                SyncStatus.DISCONNECTED -> "Tailscale Offline"
-                            },
-                            color = TextSecondary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+                            text = uiState.currentTitle,
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 180.dp)
                         )
                     }
-
-                    Text(
-                        text = uiState.currentTitle,
-                        color = TextPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 180.dp)
-                    )
                 }
 
                 if (uiState.isLoading) {
-                    Spacer(modifier = Modifier.height(4.dp))
                     LinearProgressIndicator(
                         progress = { uiState.progress / 100f },
                         modifier = Modifier
@@ -122,27 +138,22 @@ fun BrowserScreen(
             }
         },
         bottomBar = {
-            BottomNavigationBar(
-                currentUrl = uiState.currentUrl,
-                blockedCount = uiState.blockedCount,
-                tabCount = uiState.tabs.size,
-                onNavigate = { newUrl ->
-                    viewModel.updateUrl(newUrl)
-                    webViewRef?.loadUrl(newUrl)
-                },
-                onShieldClick = {
-                    viewModel.openShieldDialog(true)
-                },
-                onMybemeClick = {
-                    viewModel.openCoPilotSheet(true)
-                },
-                onTabClick = {
-                    viewModel.openTabGrid(true)
-                },
-                onMenuClick = {
-                    viewModel.openMenuSheet(true)
-                }
-            )
+            if (!uiState.isToolbarAtTop) {
+                BrowserToolbar(
+                    currentUrl = uiState.currentUrl,
+                    blockedCount = uiState.blockedCount,
+                    tabCount = uiState.tabs.size,
+                    isAtTop = false,
+                    onNavigate = { newUrl ->
+                        viewModel.updateUrl(newUrl)
+                        webViewRef?.loadUrl(newUrl)
+                    },
+                    onShieldClick = { viewModel.openShieldDialog(true) },
+                    onMybemeClick = { viewModel.openCoPilotSheet(true) },
+                    onTabClick = { viewModel.openTabGrid(true) },
+                    onMenuClick = { viewModel.openMenuSheet(true) }
+                )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -276,6 +287,7 @@ fun BrowserScreen(
             if (uiState.isMenuSheetOpen) {
                 BrowserMenuSheet(
                     isDesktopMode = uiState.isDesktopMode,
+                    isToolbarAtTop = uiState.isToolbarAtTop,
                     canGoForward = webViewRef?.canGoForward() == true,
                     onNewTab = {
                         viewModel.addNewTab()
@@ -289,6 +301,9 @@ fun BrowserScreen(
                     },
                     onToggleDesktopMode = {
                         viewModel.toggleDesktopMode()
+                    },
+                    onToggleToolbarPosition = {
+                        viewModel.toggleToolbarPosition()
                     },
                     onShare = {
                         val sendIntent = Intent().apply {

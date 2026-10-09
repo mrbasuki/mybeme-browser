@@ -20,10 +20,11 @@ import androidx.compose.ui.unit.sp
 import space.mrbasukirahmat.browser.ui.theme.*
 
 @Composable
-fun BottomNavigationBar(
+fun BrowserToolbar(
     currentUrl: String,
     blockedCount: Int,
     tabCount: Int,
+    isAtTop: Boolean = true,
     onNavigate: (String) -> Unit,
     onShieldClick: () -> Unit,
     onMybemeClick: () -> Unit,
@@ -35,12 +36,17 @@ fun BottomNavigationBar(
         color = ObsidianSurface,
         modifier = modifier
             .fillMaxWidth()
-            .border(width = 0.5.dp, color = ObsidianBorder, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .border(
+                width = 0.5.dp,
+                color = ObsidianBorder,
+                shape = if (isAtTop) RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
+                        else RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+            )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
+                .then(if (!isAtTop) Modifier.navigationBarsPadding() else Modifier)
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -48,7 +54,7 @@ fun BottomNavigationBar(
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
                     .clickable { onShieldClick() }
             ) {
@@ -90,7 +96,7 @@ fun BottomNavigationBar(
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
                     .background(ObsidianSurfaceElevated)
                     .border(1.dp, MoltenOrange, CircleShape)
@@ -137,4 +143,30 @@ fun BottomNavigationBar(
             }
         }
     }
+}
+
+@Composable
+fun BottomNavigationBar(
+    currentUrl: String,
+    blockedCount: Int,
+    tabCount: Int,
+    onNavigate: (String) -> Unit,
+    onShieldClick: () -> Unit,
+    onMybemeClick: () -> Unit,
+    onTabClick: () -> Unit,
+    onMenuClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BrowserToolbar(
+        currentUrl = currentUrl,
+        blockedCount = blockedCount,
+        tabCount = tabCount,
+        isAtTop = false,
+        onNavigate = onNavigate,
+        onShieldClick = onShieldClick,
+        onMybemeClick = onMybemeClick,
+        onTabClick = onTabClick,
+        onMenuClick = onMenuClick,
+        modifier = modifier
+    )
 }
